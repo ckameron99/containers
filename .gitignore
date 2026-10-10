@@ -1,0 +1,6 @@
+# build outputs
+out/
+*.tar
+
+# private CI signing key (the .pub is committed)
+ci-signing.rsa

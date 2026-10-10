@@ -1,0 +1,16 @@
+include: ../base.yaml
+contents:
+  packages:
+    - coredns=1.14.7-r0
+  files:
+    - src: Corefile
+      dest: /etc/coredns/Corefile
+entrypoint:
+  command: coredns
+  args: ["-conf", "/etc/coredns/Corefile"]
+ports:
+  - port: 53
+    protocol: tcp
+  - port: 53
+    protocol: udp
+vcs-url: https://github.com/coredns/coredns

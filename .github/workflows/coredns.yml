@@ -1,0 +1,110 @@
+name: coredns
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/ckameron99/coredns
+
+jobs:
+  packages:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install melange
+        run: |
+          go install github.com/chainguard-dev/melange/cmd/melange@v0.62.0
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Restore CI signing key
+        run: |
+          umask 077
+          echo "${{ secrets.MELANGE_SIGNING_KEY }}" > ci-signing.rsa
+
+      - name: Build apk
+        run: |
+          melange build coredns/melange.yaml \
+            --arch=${{ matrix.arch }} \
+            --runner=docker \
+            --repository-append=https://packages.wolfi.dev/os \
+            --keyring-append=https://packages.wolfi.dev/os/wolfi-signing.rsa.pub \
+            --signing-key=ci-signing.rsa \
+            --out-dir=out
+
+      - name: Upload apk
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.arch }}
+          path: out/${{ matrix.arch }}
+          retention-days: 1
+
+  image:
+    needs: packages
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - apk-arch: x86_64
+            apko-arch: amd64
+            tag: x86_64
+          - apk-arch: aarch64
+            apko-arch: arm64
+            tag: aarch64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download apk
+        uses: actions/download-artifact@v4
+        with:
+          name: apk-${{ matrix.apk-arch }}
+          path: out/${{ matrix.apk-arch }}
+
+      - name: Install apko
+        run: |
+          go install github.com/chainguard-dev/apko/cmd/apko@v1.4.10
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Log in to GHCR
+        run: apko login "$REGISTRY" -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Publish image
+        run: apko publish coredns/apko.yaml "${IMAGE}:${{ matrix.tag }}" --arch=${{ matrix.apko-arch }} -b "out/${{ matrix.apk-arch }}"
+
+  manifest:
+    needs: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install crane and yq
+        run: |
+          go install github.com/google/go-containerregistry/cmd/crane@v0.22.1
+          go install github.com/mikefarah/yq/v4@v4.54.1
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Build multi-arch manifests
+        run: |
+          V="$(yq -r '.package.version' coredns/melange.yaml)"
+          for tag in "$V" "${V%.*}" latest; do
+            # drop stale manifest list so re-runs don't accumulate duplicate manifests
+            crane delete "${IMAGE}:${tag}" >/dev/null 2>&1 || true
+            crane index append --name "${IMAGE}:${tag}" \
+              --manifests "${IMAGE}:x86_64,${IMAGE}:aarch64"
+          done
