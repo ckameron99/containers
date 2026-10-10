@@ -22,6 +22,10 @@ pipeline:
       output: coredns
       tags: grpcnotrace
   - uses: strip
+  - name: install-corefile
+    runs: |
+      set -eu
+      install -Dm 0644 Corefile "${{targets.destdir}}/etc/coredns/Corefile"
 test:
   pipeline:
     - runs: |
