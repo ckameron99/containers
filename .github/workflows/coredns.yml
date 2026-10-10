@@ -7,7 +7,15 @@ on:
 
 permissions:
   contents: read
-  packages: write
+
+# Serialize releases without interrupting a partially published set of tags.
+concurrency:
+  group: coredns-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
 
 env:
   REGISTRY: ghcr.io
@@ -15,6 +23,7 @@ env:
 
 jobs:
   packages:
+    if: github.ref == 'refs/heads/main'
     environment: main
     strategy:
       fail-fast: false
@@ -27,11 +36,14 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.27'
+          cache: false
 
       - name: Install melange
         run: |
@@ -39,9 +51,13 @@ jobs:
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
 
       - name: Restore CI signing key
+        env:
+          # Keep the existing GitHub environment secret name.
+          MELANGE_SIGNING_KEY: ${{ secrets.MELANCE_SIGNING_KEY }}
         run: |
           umask 077
-          echo "${{ secrets.MELANCE_SIGNING_KEY }}" > ci-signing.rsa
+          test -n "$MELANGE_SIGNING_KEY"
+          printf '%s\n' "$MELANGE_SIGNING_KEY" > "$RUNNER_TEMP/ci-signing.rsa"
 
       - name: Build apk
         run: |
@@ -50,7 +66,7 @@ jobs:
             --runner=docker \
             --repository-append=https://packages.wolfi.dev/os \
             --keyring-append=https://packages.wolfi.dev/os/wolfi-signing.rsa.pub \
-            --signing-key=ci-signing.rsa \
+            --signing-key="$RUNNER_TEMP/ci-signing.rsa" \
             --out-dir=out
 
       - name: Upload apk
@@ -59,10 +75,14 @@ jobs:
         with:
           name: apk-${{ matrix.arch }}
           path: out/${{ matrix.arch }}
+          overwrite: true
           retention-days: 1
 
   image:
     needs: packages
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -76,6 +96,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: false
 
       - name: Download apk
         uses: actions/download-artifact@v4
@@ -100,9 +128,20 @@ jobs:
 
   manifest:
     needs: image
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: false
 
       - name: Install crane and yq
         run: |
@@ -115,10 +154,12 @@ jobs:
 
       - name: Build multi-arch manifests
         run: |
-          V="$(yq -r '.package.version' coredns/melange.yaml)"
-          for tag in "$V" "${V%.*}" latest; do
-            # drop stale manifest list so re-runs don't accumulate duplicate manifests
-            crane delete "${IMAGE}:${tag}" >/dev/null 2>&1 || true
-            crane index append --name "${IMAGE}:${tag}" \
-              --manifests "${IMAGE}:x86_64,${IMAGE}:aarch64"
+          V="$(yq -er '.package.version' coredns/melange.yaml)"
+          # No base argument: create a fresh index, flattening apko's per-arch
+          # indexes. Replacing tags is safe; deleting manifests is not needed.
+          crane index append --tag "${IMAGE}:${V}" \
+            --manifest "${IMAGE}:x86_64,${IMAGE}:aarch64"
+          DIGEST="$(crane digest "${IMAGE}:${V}")"
+          for tag in "${V%.*}" latest; do
+            crane tag "${IMAGE}@${DIGEST}" "$tag"
           done

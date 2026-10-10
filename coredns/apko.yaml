@@ -4,4 +4,4 @@ contents:
     - coredns=1.14.7-r0
 entrypoint:
   command: coredns -conf /etc/coredns/Corefile
-vcs-url: https://github.com/coredns/coredns
+vcs-url: https://github.com/ckameron99/containers

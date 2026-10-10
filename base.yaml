@@ -24,7 +24,8 @@ accounts:
   users:
     - username: nonroot
       uid: 568
-  run-as: nonroot
+      gid: 568
+  run-as: "568"
 archs:
   - amd64
   - arm64
