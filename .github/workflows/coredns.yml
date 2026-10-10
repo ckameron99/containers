@@ -19,8 +19,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64, aarch64]
-    runs-on: ubuntu-latest
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-latest
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +41,7 @@ jobs:
       - name: Restore CI signing key
         run: |
           umask 077
-          echo "${{ secrets.MELANGE_SIGNING_KEY }}" > ci-signing.rsa
+          echo "${{ secrets.MELANGE_SECRET_KEY }}" > ci-signing.rsa
 
       - name: Build apk
         run: |
@@ -88,7 +92,11 @@ jobs:
         run: apko login "$REGISTRY" -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Publish image
-        run: apko publish coredns/apko.yaml "${IMAGE}:${{ matrix.tag }}" --arch=${{ matrix.apko-arch }} -b "out/${{ matrix.apk-arch }}"
+        run: >-
+          apko publish coredns/apko.yaml "${IMAGE}:${{ matrix.tag }}"
+          --arch=${{ matrix.apko-arch }}
+          -b out
+          --repository-append=https://packages.wolfi.dev/os
 
   manifest:
     needs: image

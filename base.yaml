@@ -1,5 +1,6 @@
 # Shared apko base for all containers in this repo.
-# Included from per-container apko yamls via `include: ../base.yaml`.
+# Included from per-container apko yamls via `include: base.yaml` (apko
+# resolves include paths relative to the working directory, i.e. the repo root).
 #
 # Merge semantics (verified): deep merge, child scalars override, lists append.
 # Child contents.packages are ADDED to this list.
