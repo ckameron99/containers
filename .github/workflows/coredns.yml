@@ -41,7 +41,7 @@ jobs:
       - name: Restore CI signing key
         run: |
           umask 077
-          echo "${{ secrets.MELANGE_SECRET_KEY }}" > ci-signing.rsa
+          echo "${{ secrets.MELANCE_SIGNING_KEY }}" > ci-signing.rsa
 
       - name: Build apk
         run: |
