@@ -15,6 +15,7 @@ env:
 
 jobs:
   packages:
+    environment: main
     strategy:
       fail-fast: false
       matrix:
