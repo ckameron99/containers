@@ -1,0 +1,7 @@
+include: base.yaml
+contents:
+  packages:
+    - etcd=3.6.15-r0
+entrypoint:
+  command: etcd
+vcs-url: https://github.com/ckameron99/containers
