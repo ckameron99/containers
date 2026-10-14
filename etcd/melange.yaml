@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/chainguard-dev/melange/refs/heads/main/pkg/config/schema.json
+package:
+  name: etcd
+  version: "3.6.15"
+  epoch: 0
+  description: Reliable distributed key-value store
+  copyright:
+    - license: Apache-2.0
+environment:
+  contents:
+    packages:
+      - go-1.27
+pipeline:
+  - uses: git-checkout
+    with:
+      repository: https://github.com/etcd-io/etcd
+      tag: v${{package.version}}
+  - uses: go/build
+    with:
+      go-package: go-1.27
+      # The etcd binary's main package lives in the nested `server` module.
+      modroot: server
+      packages: .
+      output: etcd
+  - uses: strip
+test:
+  pipeline:
+    - runs: |
+        set -eu
+        etcd --version
+update:
+  enabled: true
+  github:
+    identifier: etcd-io/etcd
+    strip-prefix: v
